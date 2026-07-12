@@ -20,13 +20,10 @@
         <div class="star-total" id="star-total">⭐ 0</div>
       </div>
     </div>
-    <p class="tag">One small lesson every other day — Day 1, Day 3, Day 5… — from first square to first tournament, with real games to play right here.</p>
+    <p class="tag" id="tagline">One small lesson every other day — Day 1, Day 3, Day 5… — from first square to first tournament, with real games to play right here.</p>
     <div class="name-row">
-      <button type="button" id="name-btn" class="name-chip">✏️ Put her name on it</button>
-      <form id="name-form" hidden>
-        <input id="name-input" maxlength="16" placeholder="Her name" aria-label="Her name">
-        <button class="btn btn-primary" type="submit">Save</button>
-      </form>
+      <button type="button" id="profile-btn" class="name-chip" aria-haspopup="dialog">👥 Players</button>
+      <button type="button" id="progress-btn" class="name-chip">📊 Progress</button>
     </div>
     <div class="badge-row" id="badge-row"></div>
     <div class="hud">
@@ -44,15 +41,17 @@
   </main>
 
   <details class="grown">
-    <summary>For grown-ups — how to run the quest</summary>
+    <summary id="grown-summary">For grown-ups — how to run the quest</summary>
     <div id="grown-body"></div>
   </details>
 
-  <footer class="foot">
+  <footer class="foot" id="footline">
     Tick a day when she’s comfortable, not when the calendar says so. Repeating a lesson is normal and good — rest days are part of the plan.
   </footer>
 
 </div>
+
+<div id="certificate" class="cert-sheet" aria-hidden="true"></div>
 <!-- BODY-END -->
 <script src="js/engine.js"></script>
 <script src="js/puzzles.js"></script>

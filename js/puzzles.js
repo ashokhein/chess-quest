@@ -139,5 +139,97 @@ const TACTICS = {
   ]
 };
 
-if (typeof window !== "undefined") { window.PUZZLES = PUZZLES; window.HUNTS = HUNTS; window.TACTICS = TACTICS; }
-if (typeof module !== "undefined") module.exports = { PUZZLES, HUNTS, TACTICS };
+/* Mate-in-2 pack (Track 2). White to move; the engine accepts ANY move that
+   forces mate in two (isMateIn2After), then plays black's toughest defense.
+   Every entry is machine-verified: no mate-in-1 exists, and the solution
+   forces mate against every reply. */
+const MATE2 = [
+  {
+    fen: "8/7k/R7/1R6/8/8/8/6K1 w - - 0 1", solution: "b5b7",
+    name: "The ladder, one rung early", hint: "Check on the 7th row first — then the back row slams shut."
+  },
+  {
+    fen: "8/k7/7R/6R1/8/8/8/6K1 w - - 0 1", solution: "g5g7",
+    name: "Ladder from the left", hint: "Same ladder, other side. Which rook gives the check?"
+  },
+  {
+    fen: "8/7k/R7/1Q6/8/8/8/6K1 w - - 0 1", solution: "b5b7",
+    name: "Queen joins the ladder", hint: "The queen takes the 7th row — the rook finishes on the 8th."
+  },
+  {
+    fen: "7k/8/8/4K3/8/8/6Q1/8 w - - 0 1", solution: "e5f6",
+    name: "The king lends a hand", hint: "A quiet king step first. Then the queen lands right next door."
+  },
+  {
+    fen: "k7/8/2K5/8/8/8/4Q3/8 w - - 0 1", solution: "c6b6",
+    name: "Walk, then strike", hint: "March your king one step closer — the queen sweeps the back row."
+  },
+  {
+    fen: "7k/5K2/6P1/6P1/8/8/8/8 w - - 0 1", solution: "g6g7",
+    name: "Crowning with check", hint: "Push! The brand-new queen arrives with checkmate — the little brother guards the exit."
+  },
+  {
+    fen: "k7/2K5/1P6/1P6/8/8/8/8 w - - 0 1", solution: "b6b7",
+    name: "Coronation corner", hint: "One more pawn step. Where does the king have to go?"
+  },
+  {
+    fen: "4k3/8/8/8/8/8/1R6/R5K1 w - - 0 1", solution: "b2b7",
+    name: "Cut, then slam", hint: "First cut off the 7th row — no check needed. Then slam the 8th."
+  },
+  {
+    fen: "8/2K5/8/8/1Q6/R7/7k/8 w - - 0 1", solution: "b4b2",
+    name: "Ladder, going down", hint: "The ladder works downhill too. Queen checks, rook finishes."
+  },
+  {
+    fen: "7k/8/8/6K1/8/8/8/R7 w - - 0 1", solution: "g5g6",
+    name: "Shoulder to shoulder", hint: "Step your king up close first. Then the rook delivers the letter."
+  },
+  {
+    fen: "k7/8/8/1K6/8/8/8/7R w - - 0 1", solution: "b5b6",
+    name: "Cornered by teamwork", hint: "King to b6 takes every door away. The rook does the rest."
+  },
+  {
+    fen: "k7/2K5/8/1P5p/3B4/8/8/8 w - - 0 1", solution: "b5b6",
+    name: "The quiet squeeze", hint: "No check at all! Take away the last free square and wait one move."
+  }
+];
+
+/* Tier-2 Trick Shots (Track 2): same detectors, trickier boards — poisoned
+   squares, defended targets, double threats. Verified like TACTICS. */
+const TACTICS2 = {
+  fork2: [
+    { fen: "4q1k1/5p1p/8/3N4/8/8/8/6K1 w - - 0 1", solution: "d5f6",
+      story: "The pony leaps in with CHECK — and lands on the queen's fork too!" },
+    { fen: "r5k1/6pp/8/8/8/8/8/3Q2K1 w - - 0 1", solution: "d1d5",
+      story: "One magic square sees two windows: the king down one diagonal, the rook down the other." },
+    { fen: "4k3/8/8/6p1/R6b/8/8/6K1 w - - 0 1", solution: "a4e4",
+      story: "Don't grab the guarded bishop — slide to the crossroads and fork it with the king!" }
+  ],
+  pin2: [
+    { fen: "1k6/pp6/3q4/8/7B/8/7P/6K1 w - - 0 1", solution: "h4g3",
+      story: "Tuck the bishop behind your own pawn — now the queen is frozen to her king." },
+    { fen: "q3k3/3p4/2n5/8/8/8/4B3/6K1 w - - 0 1", solution: "e2f3",
+      story: "The long diagonal! Freeze the pony to the queen hiding in the corner." },
+    { fen: "6k1/6pp/4r3/8/8/8/8/2Q3K1 w - - 0 1", solution: "c1c4",
+      story: "Pin the rook from the side — it can't step off the king's diagonal." }
+  ],
+  skewer2: [
+    { fen: "8/pr6/8/3k4/8/7B/8/6K1 w - - 0 1", solution: "h3g2",
+      story: "Check from the corner pocket! The king must step aside — his rook was hiding behind." },
+    { fen: "4r2k/7p/8/4q3/8/8/8/R4K2 w - - 0 1", solution: "a1e1",
+      story: "Poke the queen down the open file. When she runs, grab what stood behind her." },
+    { fen: "8/8/5kp1/8/8/8/1q6/6KQ w - - 0 1", solution: "h1h8",
+      story: "The longest skewer in chess: corner to corner, king in front, queen behind." }
+  ],
+  disco2: [
+    { fen: "6k1/3q1p1p/8/8/6N1/8/8/6RK w - - 0 1", solution: "g4f6",
+      story: "The pony jumps away, the rook shouts CHECK — and the pony pokes the queen. Double magic!" },
+    { fen: "3k4/5p2/8/8/8/3B4/8/3Q2K1 w - - 0 1", solution: "d3b5",
+      story: "Step the bishop aside with a threat — the queen was aiming down the road all along." },
+    { fen: "3r2k1/7p/4P3/8/8/1B6/8/6K1 w - - 0 1", solution: "e6e7",
+      story: "One tiny pawn step: the bishop checks the king AND the pawn attacks the rook!" }
+  ]
+};
+
+if (typeof window !== "undefined") { window.PUZZLES = PUZZLES; window.HUNTS = HUNTS; window.TACTICS = TACTICS; window.MATE2 = MATE2; window.TACTICS2 = TACTICS2; }
+if (typeof module !== "undefined") module.exports = { PUZZLES, HUNTS, TACTICS, MATE2, TACTICS2 };

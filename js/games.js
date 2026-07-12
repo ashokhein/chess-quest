@@ -66,7 +66,14 @@ const Games = (function () {
     });
   }
 
+  /* game timers are registered here so closing (or switching) a game can
+     never fire a stale callback into the next game's shared status UI */
+  let pending = [];
+  function later(fn, ms) { const id = setTimeout(fn, ms); pending.push(id); return id; }
+  function clearPending() { pending.forEach(clearTimeout); pending = []; }
+
   function close() {
+    clearPending();
     if (cleanup) { cleanup(); cleanup = null; }
     overlay.hidden = true;
     boardWrap.innerHTML = "";
@@ -77,6 +84,7 @@ const Games = (function () {
 
   function open(id, opts) {
     ensureModal();
+    clearPending();
     if (cleanup) { cleanup(); cleanup = null; }
     const def = REGISTRY[id];
     if (!def) return;
@@ -170,7 +178,7 @@ const Games = (function () {
           SFX.good();
           b.clearHl();
           b.highlight([idx], "hl-hint");
-          setTimeout(() => b.clearHl(), 250);
+          later(() => b.clearHl(), 250);
           if (score % 5 === 0) FX.burst(b.squareEl(idx), 30);
           newTarget(); hud();
         } else {
@@ -298,8 +306,9 @@ const Games = (function () {
       function hud() {
         if (!over) coach.reset();
         statusEl.innerHTML = over ? statusEl.innerHTML
-          : whiteToMove ? "⬜ <strong>Kid’s move</strong> — race a pawn to the top!"
-                        : "⬛ <strong>Grown-up’s move</strong>";
+          : whiteToMove ? Copy.t("⬜ <strong>Kid’s move</strong> — race a pawn to the top!",
+                                 "⬜ <strong>White to move</strong> — race a pawn to the top!")
+                        : Copy.t("⬛ <strong>Grown-up’s move</strong>", "⬛ <strong>Black to move</strong>");
         scoreEl.textContent = "";
       }
 
@@ -307,7 +316,8 @@ const Games = (function () {
         over = true;
         const stars = whiteWon ? 3 : 1;
         Store.setGameStars("pawnWars", stars);
-        statusEl.innerHTML = (whiteWon ? "⬜ The kid wins" : "⬛ The grown-up wins") +
+        statusEl.innerHTML = (whiteWon ? Copy.t("⬜ The kid wins", "⬜ White wins")
+                                       : Copy.t("⬛ The grown-up wins", "⬛ Black wins")) +
           " — " + why + " " + "★".repeat(stars);
         FX.burst(boardWrap);
         SFX.fanfare();
@@ -373,6 +383,51 @@ const Games = (function () {
     }
   };
 
+  /* Shared Socratic feedback when a "find the mate" move isn't mate.
+     Diagnoses WHY (no check / king escapes / capture-block) and resets. */
+  function mateMissCoach(o) {
+    o.lock();
+    SFX.bad();
+    const backSoon = msg => later(() => {
+      o.b.setPosition(o.resetBoard.slice());
+      o.b.shake();
+      o.unlock();
+      coach.say(msg + (o.extraNudge || ""));
+    }, 500);
+    const wasCheck = Engine.inCheck(o.next, false);
+    const escapes = Engine.allLegalMoves(o.next, false)
+      .filter(m => o.next[m.from] === "k").map(m => m.to);
+    if (!wasCheck) {
+      coach.ask("Look at the black king… is he even in <strong>check</strong> after that?", {
+        chips: [
+          { label: "No, he isn’t!", onPick: () => backSoon("Right! Checkmate always starts with CHECK. Find a move that shouts check!") },
+          { label: "Hmm, yes?", onPick: () => backSoon("Peek again — nothing attacks him. First job: give CHECK!") }
+        ]
+      });
+    } else if (escapes.length) {
+      let miss = 0;
+      coach.ask("It IS check — but the king wriggles free! <strong>Tap the square</strong> where he can escape.", {
+        onTap: t => {
+          if (escapes.includes(t)) {
+            coach.tapCheck = null;
+            o.b.highlight([t], "hl-hint");
+            SFX.good();
+            backSoon("Exactly! Your next move must lock that door too. Go!");
+          } else if (++miss >= 2) {
+            coach.tapCheck = null;
+            o.b.highlight(escapes, "hl-hint");
+            backSoon("There — the glowing doors! Find a move that locks them all.");
+          } else {
+            SFX.bad();
+            statusEl.innerHTML = "Not that one — watch the king himself. Where can <strong>he</strong> step? Tap it.";
+          }
+        }
+      });
+    } else {
+      backSoon("It’s check and the king is stuck — but black can <strong>capture or block</strong> your attacker. Sneaky! Try another move.");
+    }
+  }
+
   /* ---------------- Mate in One ---------------- */
   const mateInOne = {
     title: "Mate in 1",
@@ -429,7 +484,7 @@ const Games = (function () {
         SFX.fanfare();
         drawDots(); hud();
         busy = true;
-        setTimeout(() => {
+        later(() => {
           if (n < PUZZLES.length) {
             for (let i = 0; i < PUZZLES.length; i++) if (!Store.isSolved(i)) { cur = i; break; }
             load();
@@ -464,46 +519,180 @@ const Games = (function () {
             tries++;
             b.setPosition(next);
             b.clearHl();
-            busy = true;
-            SFX.bad();
-            const hintNudge = tries >= 2 ? " (The Hint button is your friend!)" : "";
-            const backSoon = msg => setTimeout(() => {
-              b.setPosition(Engine.parseFEN(PUZZLES[cur].fen).board);
-              b.shake();
-              busy = false;
-              coach.say(msg + hintNudge);
-            }, 500);
-            const wasCheck = Engine.inCheck(next, false);
-            const escapes = Engine.allLegalMoves(next, false)
-              .filter(m => next[m.from] === "k").map(m => m.to);
-            if (!wasCheck) {
-              coach.ask("Look at the black king… is he even in <strong>check</strong> after that?", {
-                chips: [
-                  { label: "No, he isn’t!", onPick: () => backSoon("Right! Checkmate always starts with CHECK. Find a move that shouts check!") },
-                  { label: "Hmm, yes?", onPick: () => backSoon("Peek again — nothing attacks him. First job: give CHECK!") }
-                ]
-              });
-            } else if (escapes.length) {
-              let miss = 0;
-              coach.ask("It IS check — but the king wriggles free! <strong>Tap the square</strong> where he can escape.", {
-                onTap: t => {
-                  if (escapes.includes(t)) {
-                    coach.tapCheck = null;
-                    b.highlight([t], "hl-hint");
-                    SFX.good();
-                    backSoon("Exactly! Your next move must lock that door too. Go!");
-                  } else if (++miss >= 2) {
-                    coach.tapCheck = null;
-                    b.highlight(escapes, "hl-hint");
-                    backSoon("There — the glowing doors! Find a move that locks them all.");
-                  } else {
-                    SFX.bad();
-                    statusEl.innerHTML = "Not that one — watch the king himself. Where can <strong>he</strong> step? Tap it.";
-                  }
-                }
-              });
+            mateMissCoach({
+              b, next,
+              resetBoard: Engine.parseFEN(PUZZLES[cur].fen).board,
+              lock: () => { busy = true; },
+              unlock: () => { busy = false; },
+              extraNudge: tries >= 2 ? " (The Hint button is your friend!)" : ""
+            });
+          }
+          selIdx = -1;
+        } else if (selIdx >= 0) {
+          b.shake();
+        }
+      };
+
+      load();
+    }
+  };
+
+  /* ---------------- Mate in Two ---------------- */
+  const mateInTwo = {
+    title: "Mate in 2",
+    init() {
+      const b = Board.create(newBoardEl(), { labels: true, interactive: true });
+      let cur = 0, selIdx = -1, tries = 0, busy = false;
+      let phase = 1, midBoard = null; // phase 2 = finish the mate after black's defense
+
+      for (let i = 0; i < MATE2.length; i++) if (!Store.isSolved2(i)) { cur = i; break; }
+      if (Store.solved2Count() === MATE2.length) cur = 0;
+
+      const dots = document.createElement("div");
+      dots.className = "dot-row";
+      extraEl.appendChild(dots);
+
+      function drawDots() {
+        dots.innerHTML = "";
+        MATE2.forEach((pz, i) => {
+          const d = button(String(i + 1), "dot" + (Store.isSolved2(i) ? " dot-solved" : "") + (i === cur ? " dot-cur" : ""),
+            () => { cur = i; load(); });
+          d.setAttribute("aria-label", "Puzzle " + (i + 1));
+          dots.appendChild(d);
+        });
+      }
+
+      function hud() {
+        scoreEl.innerHTML = "🧩 " + Store.solved2Count() + " / " + MATE2.length + " solved";
+      }
+
+      function load() {
+        const pz = MATE2[cur];
+        b.setPosition(Engine.parseFEN(pz.fen).board);
+        b.clearHl();
+        selIdx = -1; tries = 0; busy = false; phase = 1; midBoard = null;
+        statusEl.innerHTML = "<strong>" + pz.name + "</strong> — white forces checkmate in <strong>two</strong> moves. Find move one!";
+        controlsEl.innerHTML = "";
+        controlsEl.appendChild(button("Hint", "", () => {
+          if (phase === 1) {
+            b.highlight([Engine.sqIdx(pz.solution.slice(0, 2))], "hl-hint");
+            statusEl.innerHTML = "<strong>" + pz.name + "</strong> — " + pz.hint;
+          } else if (midBoard) {
+            for (const m of Engine.allLegalMoves(midBoard, true)) {
+              if (Engine.isMate(Engine.applyMove(midBoard, m.from, m.to), false)) {
+                b.highlight([m.from], "hl-hint");
+                break;
+              }
+            }
+          }
+        }));
+        controlsEl.appendChild(button("Start pack over", "btn-quiet", () => {
+          Store.resetPuzzles2(); cur = 0; drawDots(); hud(); load();
+        }));
+        drawDots(); hud();
+      }
+
+      function solved(msg) {
+        Store.setSolved2(cur);
+        const n = Store.solved2Count();
+        Store.setGameStars("mateInTwo", n >= 12 ? 3 : n >= 8 ? 2 : n >= 4 ? 1 : 0);
+        statusEl.innerHTML = msg;
+        Voice.say(msg);
+        FX.burst(boardWrap);
+        SFX.fanfare();
+        drawDots(); hud();
+        busy = true;
+        later(() => {
+          if (n < MATE2.length) {
+            for (let i = 0; i < MATE2.length; i++) if (!Store.isSolved2(i)) { cur = i; break; }
+            load();
+          } else {
+            statusEl.innerHTML = "<strong>Pack complete!</strong> Twelve forced mates — real chess player thinking. ★★★";
+          }
+        }, 1600);
+      }
+
+      /* black plays its toughest defense, then hands the mate-in-1 back */
+      function blackReplies(afterWhite) {
+        busy = true;
+        later(() => {
+          const d = Engine.bestDefense(afterWhite);
+          if (!d) { solved("<strong>Checkmate!</strong> 🎉"); return; }
+          const afterBlack = Engine.applyMove(afterWhite, d.from, d.to);
+          b.setPosition(afterBlack);
+          b.pop(d.to);
+          SFX.move();
+          midBoard = afterBlack;
+          phase = 2; busy = false;
+          const say = "Locked in! Black tries <strong>" + Engine.sqName(d.from) + "–" + Engine.sqName(d.to) +
+            "</strong>… now finish it. <strong>Mate in one!</strong>";
+          coach.say(say);
+        }, 750);
+      }
+
+      b.onTap = idx => {
+        if (coach.handleTap(idx)) return;
+        if (busy) return;
+        const pos = b.position();
+        const p = pos[idx];
+        if (p !== "" && Engine.isWhitePiece(p)) {
+          selIdx = idx;
+          b.clearHl();
+          b.highlight([idx], "hl-sel");
+          for (const t of Engine.legalTargets(pos, idx)) {
+            b.highlight([t], pos[t] === "" ? "hl-move" : "hl-cap");
+          }
+          return;
+        }
+        if (selIdx >= 0 && Engine.legalTargets(pos, selIdx).includes(idx)) {
+          const next = Engine.applyMove(pos, selIdx, idx);
+
+          if (phase === 1) {
+            if (Engine.isMate(next, false)) {
+              b.setPosition(next); b.clearHl(); b.pop(idx);
+              solved("<strong>Checkmate — even faster than asked!</strong> 🎉");
+            } else if (Engine.isMateIn2After(pos, selIdx, idx)) {
+              b.setPosition(next); b.clearHl(); b.pop(idx);
+              SFX.good();
+              statusEl.innerHTML = "That's the squeeze — black has no good answer…";
+              blackReplies(next);
             } else {
-              backSoon("It’s check and the king is stuck — but black can <strong>capture or block</strong> your attacker. Sneaky! Try another move.");
+              tries++;
+              b.setPosition(next); b.clearHl();
+              busy = true; SFX.bad();
+              const replies = Engine.allLegalMoves(next, false);
+              let saveMove = null;
+              for (const r of replies) {
+                if (!Engine.hasMateIn1(Engine.applyMove(next, r.from, r.to), true)) { saveMove = r; break; }
+              }
+              const nudge = tries >= 2 ? " (The Hint button is your friend!)" : "";
+              const escapeTxt = saveMove
+                ? "black plays <strong>" + Engine.sqName(saveMove.from) + "–" + Engine.sqName(saveMove.to) + "</strong> and there is no mate"
+                : "black slips away";
+              later(() => {
+                b.setPosition(Engine.parseFEN(MATE2[cur].fen).board);
+                b.shake();
+                busy = false;
+                coach.say((Engine.inCheck(next, false)
+                  ? "It's check — but " + escapeTxt + ". Find the move that leaves <strong>no way out</strong>."
+                  : "Black gets a free turn: " + escapeTxt + ". Move one must be a check or an unstoppable threat!") + nudge);
+              }, 900);
+            }
+          } else {
+            /* phase 2: must be mate in one */
+            if (Engine.isMate(next, false)) {
+              b.setPosition(next); b.clearHl(); b.pop(idx);
+              solved("<strong>Checkmate!</strong> 🎉 A forced mate in two — beautifully done.");
+            } else {
+              tries++;
+              b.setPosition(next); b.clearHl();
+              mateMissCoach({
+                b, next,
+                resetBoard: midBoard,
+                lock: () => { busy = true; },
+                unlock: () => { busy = false; },
+                extraNudge: tries >= 2 ? " (The Hint button is your friend!)" : ""
+              });
             }
           }
           selIdx = -1;
@@ -649,7 +838,8 @@ const Games = (function () {
         b.setPosition(Engine.parseFEN(h.fen).board);
         b.clearHl();
         busy = false;
-        statusEl.innerHTML = "<em>" + h.story + "</em><br>Tap the black piece that is <strong>free to take</strong> — attacked, and nobody guards it!";
+        statusEl.innerHTML = (Copy.isStory() ? "<em>" + h.story + "</em><br>" : "") +
+          "Tap the black piece that is <strong>free to take</strong> — attacked, and nobody guards it!";
         controlsEl.innerHTML = "";
         controlsEl.appendChild(button("Hint", "", () => {
           // light up the white attacker(s) of the answer square
@@ -661,7 +851,8 @@ const Games = (function () {
               b.highlight([i], "hl-hint");
             }
           }
-          statusEl.innerHTML = "<em>" + h.story + "</em><br>Follow the glowing piece — what can it grab for free?";
+          statusEl.innerHTML = (Copy.isStory() ? "<em>" + h.story + "</em><br>" : "") +
+            "Follow the glowing piece — what can it grab for free?";
         }));
         controlsEl.appendChild(button("Start cases over", "btn-quiet", () => {
           Store.resetHunts(); cur = 0; drawDots(); hud(); load();
@@ -679,7 +870,7 @@ const Games = (function () {
         SFX.coin();
         drawDots(); hud();
         busy = true;
-        setTimeout(() => {
+        later(() => {
           if (n < HUNTS.length) {
             for (let i = 0; i < HUNTS.length; i++) if (!Store.isHuntSolved(i)) { cur = i; break; }
             load();
@@ -739,7 +930,11 @@ const Games = (function () {
     fork: { name: "The Fork", ask: "Play a move that attacks TWO things at once!" },
     pin: { name: "The Pin", ask: "Play a move that freezes a piece to something precious behind it!" },
     skewer: { name: "The Skewer", ask: "Attack the big one in front — grab what hides behind!" },
-    disco: { name: "Discovered Attack", ask: "Move one piece so the piece behind it attacks — surprise!" }
+    disco: { name: "Discovered Attack", ask: "Move one piece so the piece behind it attacks — surprise!" },
+    fork2: { name: "The Fork — Master", ask: "Fork two big pieces from a square nobody can punish!" },
+    pin2: { name: "The Pin — Master", ask: "Build the line of three: you, their piece, their treasure behind it." },
+    skewer2: { name: "The Skewer — Master", ask: "Poke the big one in front so it must run — collect what hides behind." },
+    disco2: { name: "Discovered Attack — Master", ask: "Move one piece, unleash another — make BOTH of them threaten something!" }
   };
   const DETECTOR = {
     fork: (b, to) => Engine.isForkAfter(b, to),
@@ -747,12 +942,14 @@ const Games = (function () {
     skewer: (b, to) => Engine.isSkewerAfter(b, to),
     disco: (b, to) => Engine.isDiscoveredAfter(b, to, true)
   };
+  DETECTOR.fork2 = DETECTOR.fork; DETECTOR.pin2 = DETECTOR.pin;
+  DETECTOR.skewer2 = DETECTOR.skewer; DETECTOR.disco2 = DETECTOR.disco;
 
   const tacticTrainer = {
     title: "Trick Shots",
     init(opts) {
-      const pack = opts.pack && TACTICS[opts.pack] ? opts.pack : "fork";
-      const cases = TACTICS[pack];
+      const pack = opts.pack && (TACTICS[opts.pack] || TACTICS2[opts.pack]) ? opts.pack : "fork";
+      const cases = TACTICS[pack] || TACTICS2[pack];
       const info = PACK_INFO[pack];
       titleEl.textContent = "Trick Shots — " + info.name;
       const b = Board.create(newBoardEl(), { labels: true, interactive: true });
@@ -780,7 +977,7 @@ const Games = (function () {
         b.setPosition(Engine.parseFEN(cases[cur].fen).board);
         b.clearHl();
         selIdx = -1; busy = false;
-        statusEl.innerHTML = "<em>" + cases[cur].story + "</em><br>" + info.ask;
+        statusEl.innerHTML = (Copy.isStory() ? "<em>" + cases[cur].story + "</em><br>" : "") + info.ask;
         controlsEl.innerHTML = "";
         controlsEl.appendChild(button("Hint", "", () => {
           b.highlight([Engine.sqIdx(cases[cur].solution.slice(0, 2))], "hl-hint");
@@ -793,15 +990,19 @@ const Games = (function () {
 
       function solved() {
         Store.setTacticSolved(pack, cur);
-        const total = ["fork", "pin", "skewer", "disco"].reduce((s, p) => s + Store.tacticCount(p), 0);
-        Store.setGameStars("tacticTrainer", total >= 13 ? 3 : total >= 8 ? 2 : total >= 4 ? 1 : 0);
+        const tier2 = pack.slice(-1) === "2";
+        const packKeys = tier2 ? ["fork2", "pin2", "skewer2", "disco2"] : ["fork", "pin", "skewer", "disco"];
+        const total = packKeys.reduce((s, p) => s + Store.tacticCount(p), 0);
+        Store.setGameStars(tier2 ? "tacticTrainer2" : "tacticTrainer",
+          tier2 ? (total >= 12 ? 3 : total >= 8 ? 2 : total >= 4 ? 1 : 0)
+                : (total >= 13 ? 3 : total >= 8 ? 2 : total >= 4 ? 1 : 0));
         statusEl.innerHTML = "<strong>" + info.name + "!</strong> 🎯 Beautifully done.";
         Voice.say(info.name + "! Beautifully done!");
         FX.burst(boardWrap);
         SFX.fanfare();
         drawDots(); hud();
         busy = true;
-        setTimeout(() => {
+        later(() => {
           const n = Store.tacticCount(pack);
           if (n < cases.length) {
             for (let i = 0; i < cases.length; i++) if (!Store.isTacticSolved(pack, i)) { cur = i; break; }
@@ -838,7 +1039,7 @@ const Games = (function () {
             b.clearHl();
             SFX.bad();
             busy = true;
-            const backSoon = msg => setTimeout(() => {
+            const backSoon = msg => later(() => {
               b.setPosition(Engine.parseFEN(cases[cur].fen).board);
               b.shake();
               busy = false;
@@ -890,7 +1091,7 @@ const Games = (function () {
     }
   };
 
-  const REGISTRY = { squareRace, coinHop, pawnWars, mateInOne, hangingHunt, tacticTrainer, rookMaze };
+  const REGISTRY = { squareRace, coinHop, pawnWars, mateInOne, mateInTwo, hangingHunt, tacticTrainer, rookMaze };
 
   return { open, close };
 })();

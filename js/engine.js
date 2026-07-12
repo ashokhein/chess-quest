@@ -227,6 +227,44 @@ function isDiscoveredAfter(board, to, white) {
   return false;
 }
 
+/* ---- mate-in-2 (used by the Mate in 2 game and its puzzle pack) ---- */
+
+function hasMateIn1(board, white) {
+  for (const m of allLegalMoves(board, white)) {
+    if (isMate(applyMove(board, m.from, m.to), !white)) return true;
+  }
+  return false;
+}
+
+/* Forced mate in exactly two: after this move the enemy is NOT yet mated,
+   still has replies, and every one of them leaves us a mate-in-1. */
+function isMateIn2After(board, from, to) {
+  const white = isWhitePiece(board[from]);
+  const b1 = applyMove(board, from, to);
+  if (inCheck(b1, white)) return false;
+  if (isMate(b1, !white)) return false;
+  const replies = allLegalMoves(b1, !white);
+  if (replies.length === 0) return false; // stalemate
+  for (const r of replies) {
+    if (!hasMateIn1(applyMove(b1, r.from, r.to), white)) return false;
+  }
+  return true;
+}
+
+/* Black's toughest reply: the one leaving white the fewest mating moves. */
+function bestDefense(board) {
+  let best = null, fewest = Infinity;
+  for (const r of allLegalMoves(board, false)) {
+    const after = applyMove(board, r.from, r.to);
+    let mates = 0;
+    for (const m of allLegalMoves(after, true)) {
+      if (isMate(applyMove(after, m.from, m.to), false)) mates++;
+    }
+    if (mates < fewest) { fewest = mates; best = r; }
+  }
+  return best;
+}
+
 /* Fewest moves for the piece on `from` to reach each square (walls and
    captures respected). -1 = unreachable. Used by the Rook Maze generator. */
 function pathDistances(board, from) {
@@ -273,6 +311,7 @@ const Engine = {
   attackSquares, isAttacked, findKing, inCheck,
   pieceTargets, legalTargets, applyMove, allLegalMoves,
   isMate, isStalemate,
+  hasMateIn1, isMateIn2After, bestDefense,
   pieceValue, isForkAfter, isPinAfter, isSkewerAfter, isDiscoveredAfter,
   attackersOf, defendersOf, pathDistances
 };

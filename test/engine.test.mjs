@@ -2,7 +2,7 @@
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const E = require("../js/engine.js");
-const { PUZZLES, HUNTS, TACTICS } = require("../js/puzzles.js");
+const { PUZZLES, HUNTS, TACTICS, MATE2, TACTICS2 } = require("../js/puzzles.js");
 
 let failures = 0;
 function check(label, cond, extra = "") {
@@ -166,6 +166,38 @@ for (const pack in TACTICS) {
       (!legal ? "solution not legal; " : "") +
       (legal && !works ? "detector says trick not performed" : ""));
   });
+}
+
+console.log("tier-2 tactics: every solution is legal and performs its named trick");
+for (const pack in TACTICS2) {
+  TACTICS2[pack].forEach((tc, i) => {
+    const { board } = E.parseFEN(tc.fen);
+    const from = E.sqIdx(tc.solution.slice(0, 2));
+    const to = E.sqIdx(tc.solution.slice(2, 4));
+    const cleanStart = !E.inCheck(board, false) && !E.inCheck(board, true);
+    const legal = E.legalTargets(board, from).includes(to);
+    const works = legal && DETECTOR[pack.replace(/2$/, "")](E.applyMove(board, from, to), to);
+    check("tier2 " + pack + " " + (i + 1) + " (" + tc.solution + ")", cleanStart && legal && works,
+      (!cleanStart ? "position starts in check; " : "") +
+      (!legal ? "solution not legal; " : "") +
+      (legal && !works ? "detector says trick not performed" : ""));
+  });
+}
+
+console.log("mate-in-2: no mate-in-1 exists, solution forces mate against every reply");
+for (const pz of MATE2) {
+  const { board } = E.parseFEN(pz.fen);
+  const from = E.sqIdx(pz.solution.slice(0, 2));
+  const to = E.sqIdx(pz.solution.slice(2, 4));
+  const cleanStart = !E.inCheck(board, false);
+  const noShortcut = !E.hasMateIn1(board, true);
+  const legal = E.legalTargets(board, from).includes(to);
+  const forces = legal && E.isMateIn2After(board, from, to);
+  check(pz.name + " (" + pz.solution + ")", cleanStart && noShortcut && legal && forces,
+    (!cleanStart ? "position starts with black in check; " : "") +
+    (!noShortcut ? "a mate-in-1 exists; " : "") +
+    (!legal ? "solution not legal; " : "") +
+    (legal && !forces ? "solution does not force mate in 2" : ""));
 }
 
 console.log(failures === 0 ? "\nALL TESTS PASSED" : "\n" + failures + " FAILURE(S)");
